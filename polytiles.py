@@ -71,7 +71,7 @@ class ListWriter:
         self.f.write("BBox: {0}\n".format(poly.bounds))
 
     def write(self, x, y, z):
-        self.f.write("{0}/{1}/{2}\n".format(z,x,y))
+        self.f.write("{0} {1} {2}\n".format(x,y,z))
 
     def exists(self, x, y, z):
         return False
@@ -299,7 +299,7 @@ class ListGenerator:
         for line in self.f:
             m = re.search(r"(\d{1,2})\D+(\d+)\D+(\d+)", line)
             if m:
-                queue.put((int(m.group(2)), int(m.group(3)), int(m.group(1))))
+                queue.put((int(m.group(1)), int(m.group(2)), int(m.group(3))))
 
 
 class PolyGenerator:
