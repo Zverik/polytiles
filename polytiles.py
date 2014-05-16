@@ -11,7 +11,6 @@ from math import pi,cos,sin,log,exp,atan
 from subprocess import call
 from shapely.geometry import Polygon
 from shapely.wkb import loads
-import ogr
 
 try:
 	import psycopg2
@@ -404,48 +403,33 @@ def poly_parse(fp):
 	return poly
 
 
-def project(geom, from_epsg=900913, to_epsg=4326):
-	# source: http://hackmap.blogspot.com/2008/03/ogr-python-projection.html
-	to_srs = ogr.osr.SpatialReference()
-	to_srs.ImportFromEPSG(to_epsg)
-
-	from_srs = ogr.osr.SpatialReference()
-	from_srs.ImportFromEPSG(from_epsg)
-
-	ogr_geom = ogr.CreateGeometryFromWkb(geom.wkb)
-	ogr_geom.AssignSpatialReference(from_srs)
-
-	ogr_geom.TransformTo(to_srs)
-	return loads(ogr_geom.ExportToWkb())
-
 def read_db(db, osm_id=0):
 	# Zero for DB bbox
 	cur = db.cursor()
 	if osm_id:
-		cur.execute("""SELECT way FROM planet_osm_polygon WHERE osm_id = %s;""", (osm_id,))
+		cur.execute("""SELECT ST_Transform(way, 4326) FROM planet_osm_polygon WHERE osm_id = %s;""", (osm_id,))
 	else:
-		cur.execute("""SELECT ST_ConvexHull(ST_Collect(way)) FROM planet_osm_polygon;""")
+		cur.execute("""SELECT ST_Transform(ST_ConvexHull(ST_Collect(way)), 4326) FROM planet_osm_polygon;""")
 	way = cur.fetchone()[0]
 	cur.close()
-	poly = loads(way.decode('hex'))
-	return project(poly)
+	return loads(way.decode('hex'))
 
 def read_cities(db, osm_id=0):
 	cur = db.cursor()
 	if osm_id:
-		cur.execute("""SELECT ST_Union(pl.way) FROM planet_osm_polygon pl, planet_osm_polygon b WHERE b.osm_id = %s AND pl.place IN ('town', 'city') AND ST_Area(pl.way) < 500*1000*1000 AND ST_Contains(b.way, pl.way);""", (osm_id,))
+		cur.execute("""SELECT ST_Transform(ST_Union(pl.way), 4326) FROM planet_osm_polygon pl, planet_osm_polygon b WHERE b.osm_id = %s AND pl.place IN ('town', 'city') AND ST_Area(pl.way) < 500*1000*1000 AND ST_Contains(b.way, pl.way);""", (osm_id,))
 	else:
-		cur.execute("""SELECT ST_Union(way) FROM planet_osm_polygon WHERE place IN ('town', 'city') AND ST_Area(way) < 500*1000*1000;""")
+		cur.execute("""SELECT ST_Transform(ST_Union(way), 4326) FROM planet_osm_polygon WHERE place IN ('town', 'city') AND ST_Area(way) < 500*1000*1000;""")
 	result = cur.fetchone()
 	poly = loads(result[0].decode('hex')) if result else Polygon()
 	if osm_id:
-		cur.execute("""SELECT ST_Union(ST_Buffer(p.way, 5000)) FROM planet_osm_point p, planet_osm_polygon b WHERE b.osm_id=%s AND ST_Contains(b.way, p.way) AND p.place IN ('town', 'city') AND NOT EXISTS(SELECT 1 FROM planet_osm_polygon pp WHERE pp.name=p.name AND ST_Contains(pp.way, p.way));""", (osm_id,))
+		cur.execute("""SELECT ST_Transform(ST_Union(ST_Buffer(p.way, 5000)), 4326) FROM planet_osm_point p, planet_osm_polygon b WHERE b.osm_id=%s AND ST_Contains(b.way, p.way) AND p.place IN ('town', 'city') AND NOT EXISTS(SELECT 1 FROM planet_osm_polygon pp WHERE pp.name=p.name AND ST_Contains(pp.way, p.way));""", (osm_id,))
 	else:
-		cur.execute("""SELECT ST_Union(ST_Buffer(p.way, 5000)) FROM planet_osm_point p WHERE p.place in ('town', 'city') AND NOT EXISTS(SELECT 1 FROM planet_osm_polygon pp WHERE pp.name=p.name AND ST_Contains(pp.way, p.way));""")
+		cur.execute("""SELECT ST_Transform(ST_Union(ST_Buffer(p.way, 5000)), 4326) FROM planet_osm_point p WHERE p.place in ('town', 'city') AND NOT EXISTS(SELECT 1 FROM planet_osm_polygon pp WHERE pp.name=p.name AND ST_Contains(pp.way, p.way));""")
 	result = cur.fetchone()
 	if result:
 		poly = poly.union(loads(result[0].decode('hex')))
-	return project(poly)
+	return poly
 
 
 if __name__ == "__main__":

@@ -4,9 +4,9 @@ A script to get tiles from mapnik. Area can be defined by bbox, polygon or an OS
 
 ## Requirements
 
-Packages `python-shapely`, `python-psycopg2` and `gdal-python`. And mapnik, of course.
+Mapnik and `python-shapely` package. Optional dependencies are `python-psycopg2` and `sqlite3`.
 
 ## Author and license
 
-Written by Ilya Zverev, based on [generate_tiles_multiprocess.py](http://svn.openstreetmap.org/applications/rendering/mapnik/generate_tiles_multiprocess.py), licensed WTFPL.
+Written by Ilya Zverev, based on [generate\_tiles\_multiprocess.py](http://svn.openstreetmap.org/applications/rendering/mapnik/generate_tiles_multiprocess.py), licensed WTFPL.
 
