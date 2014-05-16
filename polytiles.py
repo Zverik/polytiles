@@ -4,18 +4,26 @@
 # this file is based on generate_tiles_multiprocess.py
 # run it without arguments to see options list
 
+import mapnik
+import sys, os, getpass, argparse
+import multiprocessing
 from math import pi,cos,sin,log,exp,atan
 from subprocess import call
-import sys, os
-import mapnik
-import multiprocessing
-import psycopg2
 from shapely.geometry import Polygon
 from shapely.wkb import loads
 import ogr
-import sqlite3
-import getpass
-import argparse
+
+try:
+	import psycopg2
+	HAS_PSYCOPG = True
+except ImportError:
+	HAS_PSYCOPG = False
+
+try:
+	import sqlite3
+	HAS_SQLITE = True
+except ImportError:
+	HAS_SQLITE = False
 
 DEG_TO_RAD = pi/180
 RAD_TO_DEG = 180/pi
@@ -452,27 +460,30 @@ if __name__ == "__main__":
 	apg_input = parser.add_argument_group('Input')
 	apg_input.add_argument("-b", "--bbox", nargs=4, type=float, metavar=('X1', 'Y1', 'X2', 'Y2'), help="generate tiles inside a bounding box")
 	apg_input.add_argument('-p', '--poly', type=argparse.FileType('r'), help='use a poly file for area')
-	apg_input.add_argument("-a", "--area", type=int, metavar='OSM_ID', help="generate tiles inside an OSM polygon: positive for polygons, negative for relations, 0 for whole database")
-	apg_input.add_argument("-c", "--cities", type=int, metavar='OSM_ID', help='generate tiles for all towns inside a polygon')
+	if HAS_PSYCOPG:
+		apg_input.add_argument("-a", "--area", type=int, metavar='OSM_ID', help="generate tiles inside an OSM polygon: positive for polygons, negative for relations, 0 for whole database")
+		apg_input.add_argument("-c", "--cities", type=int, metavar='OSM_ID', help='generate tiles for all towns inside a polygon')
 	apg_input.add_argument('-l', '--list', type=argparse.FileType('r'), metavar='TILES.LST', help='process tile list')
 	apg_output = parser.add_argument_group('Output')
 	apg_output.add_argument('-t', '--tiledir', metavar='DIR', help='output tiles to directory (default: {0}/tiles)'.format(os.getcwd()))
 	apg_output.add_argument('--tms', action='store_true', help='write files in TMS order', default=False)
-	apg_output.add_argument('-m', '--mbtiles', help='generate mbtiles file')
-	apg_output.add_argument('--name', help='name for mbtiles', default='Test MBTiles')
-	apg_output.add_argument('--overlay', action='store_true', help='if this layer is an overlay (for mbtiles metadata)', default=False)
+	if HAS_SQLITE:
+		apg_output.add_argument('-m', '--mbtiles', help='generate mbtiles file')
+		apg_output.add_argument('--name', help='name for mbtiles', default='Test MBTiles')
+		apg_output.add_argument('--overlay', action='store_true', help='if this layer is an overlay (for mbtiles metadata)', default=False)
 	apg_output.add_argument('-x', '--export', type=argparse.FileType('w'), metavar='TILES.LST', help='save tile list into file')
 	apg_output.add_argument('-z', '--zooms', type=int, nargs=2, metavar=('ZMIN', 'ZMAX'), help='range of zoom levels to render (default: 6 12)', default=(6, 12))
 	apg_other = parser.add_argument_group('Settings')
 	apg_other.add_argument('-s', '--style', help='style file for mapnik (default: {0})'.format(mapfile), default=mapfile)
 	apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
 	apg_other.add_argument('-q', '--quiet', dest='verbose', action='store_false', help='do not print any information',  default=True)
-	apg_db = parser.add_argument_group('Database (for poly/cities)')
-	apg_db.add_argument('-d', '--dbname', metavar='DB', help='database (default: gis)', default='gis')
-	apg_db.add_argument('--host', help='database host', default='localhost')
-	apg_db.add_argument('--port', type=int, help='database port', default='5432')
-	apg_db.add_argument('-u', '--user', help='user name for db (default: {0})'.format(default_user), default=default_user)
-	apg_db.add_argument('-w', '--password', action='store_true', help='ask for password', default=False)
+	if HAS_PSYCOPG:
+		apg_db = parser.add_argument_group('Database (for poly/cities)')
+		apg_db.add_argument('-d', '--dbname', metavar='DB', help='database (default: gis)', default='gis')
+		apg_db.add_argument('--host', help='database host', default='localhost')
+		apg_db.add_argument('--port', type=int, help='database port', default='5432')
+		apg_db.add_argument('-u', '--user', help='user name for db (default: {0})'.format(default_user), default=default_user)
+		apg_db.add_argument('-w', '--password', action='store_true', help='ask for password', default=False)
 	options = parser.parse_args()
 
 	# check for required argument
@@ -483,7 +494,7 @@ if __name__ == "__main__":
 	# writer
 	if options.tiledir:
 		writer = FileWriter(options.tiledir) if not options.tms else TMSWriter(options.tiledir)
-	elif options.mbtiles:
+	elif HAS_SQLITE and options.mbtiles:
 		writer = MBTilesWriter(options.mbtiles, options.name, overlay=options.overlay)
 	elif options.export:
 		writer = ListWriter(options.export)
@@ -499,7 +510,7 @@ if __name__ == "__main__":
 	if options.poly:
 		tpoly = Polygon(poly_parse(options.poly))
 		poly = tpoly if not poly else poly.intersection(tpoly)
-	if options.area != None or options.cities != None:
+	if HAS_PSYCOPG and (options.area != None or options.cities != None):
 		passwd = ""
 		if options.password:
 			passwd = getpass.getpass("Please enter your password: ")
