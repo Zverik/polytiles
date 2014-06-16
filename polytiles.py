@@ -38,7 +38,7 @@ def minmax (a,b,c):
 	return a
 
 class GoogleProjection:
-	def __init__(self,levels=18):
+	def __init__(self,levels=22):
 		self.Bc = []
 		self.Cc = []
 		self.zc = []
