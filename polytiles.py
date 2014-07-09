@@ -389,18 +389,29 @@ def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True):
 
 
 def poly_parse(fp):
+	result = None
 	poly = []
 	data = False
 	for l in fp:
 		l = l.strip()
-		if not l: continue
-		if l == 'END': break
-		if l == '1':
+		if l == 'END' and data:
+			if len(poly) > 0:
+				if hole and result:
+					result = result.difference(Polygon(poly))
+				elif not hole and result:
+					result = result.union(Polygon(poly))
+				elif not hole:
+					result = Polygon(poly)
+			poly = []
+			data = False
+		elif l == 'END' and not data:
+			break
+		elif len(l) > 0 and ' ' not in l and '\t' not in l:
 			data = True
-			continue
-		if not data: continue
-		poly.append(map(lambda x: float(x.strip()), l.split()[:2]))
-	return poly
+			hole = l[0] == '!'
+		elif l and data:
+			poly.append(map(lambda x: float(x.strip()), l.split()[:2]))
+	return result
 
 
 def read_db(db, osm_id=0):
@@ -489,10 +500,9 @@ if __name__ == "__main__":
 	poly = None
 	if options.bbox:
 		b = options.bbox
-		tpoly = box(b[0], b[1], b[2], b[3])
-		poly = tpoly if not poly else poly.intersection(tpoly)
+		poly = box(b[0], b[1], b[2], b[3])
 	if options.poly:
-		tpoly = Polygon(poly_parse(options.poly))
+		tpoly = poly_parse(options.poly)
 		poly = tpoly if not poly else poly.intersection(tpoly)
 	if HAS_PSYCOPG and (options.area != None or options.cities != None):
 		passwd = ""
