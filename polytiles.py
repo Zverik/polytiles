@@ -482,7 +482,7 @@ if __name__ == "__main__":
 	options = parser.parse_args()
 
 	# check for required argument
-	if options.bbox == None and options.poly == None and options.cities == None and options.list == None and options.area == None:
+	if options.bbox == None and options.poly == None and (not HAS_PSYCOPG or (options.cities == None and options.area == None)) and options.list == None:
 		parser.print_help()
 		sys.exit()
 
