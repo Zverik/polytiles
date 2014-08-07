@@ -305,7 +305,7 @@ class ListGenerator:
 	def generate(self, queue):
 		import re
 		for line in self.f:
-			m = re.search(r"(\d{1,2})\D+(\d+)\D+(\d+)", line)
+			m = re.search(r"(\d+)\D+(\d+)\D+(\d{1,2})", line)
 			if m:
 				queue.put((int(m.group(1)), int(m.group(2)), int(m.group(3))))
 
