@@ -219,12 +219,13 @@ class ThreadedWriter:
 
 
 class RenderThread:
-	def __init__(self, writer, mapfile, q, printLock, verbose=True):
+	def __init__(self, writer, mapfile, q, printLock, verbose=True, scale=1.0):
 		self.writer = writer
 		self.q = q
 		self.mapfile = mapfile
 		self.printLock = printLock
 		self.verbose = verbose
+		self.scale = scale
 
 	def render_tile(self, x, y, z):
 		# Calculate pixel positions of bottom-left & top-right
@@ -244,14 +245,14 @@ class RenderThread:
 			bbox = mapnik.Box2d(c0.x,c0.y, c1.x,c1.y)
 		else:
 			bbox = mapnik.Envelope(c0.x,c0.y, c1.x,c1.y)
-		render_size = TILE_SIZE
+		render_size = int(TILE_SIZE * self.scale)
 		self.m.resize(render_size, render_size)
 		self.m.zoom_to_box(bbox)
-		self.m.buffer_size = 128
+		self.m.buffer_size = int(TILE_SIZE * self.scale / 2)
 
 		# Render image with default Agg renderer
 		im = mapnik.Image(render_size, render_size)
-		mapnik.render(self.m, im)
+		mapnik.render(self.m, im, self.scale)
 		self.writer.write(x, y, z, im)
 
 
@@ -356,7 +357,7 @@ class PolyGenerator:
 					queue.put(t)
 
 
-def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True):
+def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True, scale=1.0):
 	if verbose:
 		print "render_tiles(",generator, mapfile, writer, ")"
 
@@ -366,7 +367,7 @@ def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True):
 	renderers = {}
 	if writer.multithreading():
 		for i in range(num_threads):
-			renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose)
+			renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale)
 			render_thread = multiprocessing.Process(target=renderer.loop)
 			render_thread.start()
 			#print "Started render thread %s" % render_thread.getName()
@@ -383,7 +384,7 @@ def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True):
 		for i in range(num_threads):
 			renderers[i].join()
 	else:
-		renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose)
+		renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale)
 		queue.put(None)
 		renderer.loop()
 
@@ -470,6 +471,7 @@ if __name__ == "__main__":
 	apg_output.add_argument('-z', '--zooms', type=int, nargs=2, metavar=('ZMIN', 'ZMAX'), help='range of zoom levels to render (default: 6 12)', default=(6, 12))
 	apg_other = parser.add_argument_group('Settings')
 	apg_other.add_argument('-s', '--style', help='style file for mapnik (default: {0})'.format(mapfile), default=mapfile)
+	apg_other.add_argument('--scale', type=float, default=1.0, help='scale factor for HiDpi tiles (affects tile size)')
 	apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
 	apg_other.add_argument('-q', '--quiet', dest='verbose', action='store_false', help='do not print any information',  default=True)
 	if HAS_PSYCOPG:
@@ -530,5 +532,5 @@ if __name__ == "__main__":
 		print "Please specify a region for rendering."
 		sys.exit()
 
-	render_tiles(generator, options.style, writer, num_threads=options.threads, verbose=options.verbose)
+	render_tiles(generator, options.style, writer, num_threads=options.threads, verbose=options.verbose, scale=options.scale)
 	writer.close()
