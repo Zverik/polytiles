@@ -27,6 +27,7 @@ except ImportError:
 DEG_TO_RAD = pi/180
 RAD_TO_DEG = 180/pi
 TILE_SIZE = 256
+LIST_QUEUE_LENGTH = 32
 
 
 def box(x1,y1,x2,y2):
@@ -217,24 +218,35 @@ class ThreadedWriter:
 	def close(self):
 		writer.close()
 
+class RenderTask:
+	def __init__(self, metatile, zoom, x, y):
+		self.zoom = zoom
+		self.metatile = metatile
+		self.mtx0 = x - x % metatile
+		self.mty0 = y - y % metatile
+		self._tiles = set()
+		# Projects between tile pixel co-ordinates and LatLong (EPSG:4326)
+		self.tileproj = GoogleProjection()
 
-class RenderThread:
-	def __init__(self, writer, mapfile, q, printLock, verbose=True, scale=1.0):
-		self.writer = writer
-		self.q = q
-		self.mapfile = mapfile
-		self.printLock = printLock
-		self.verbose = verbose
-		self.scale = scale
+	def add(self, x, y):
+		if self.belongs(x, y):
+			self._tiles.add((x, y))
 
-	def render_tile(self, x, y, z):
+	def belongs(self, x, y, z = -1):
+		return (z < 0 or z == self.zoom) and x >= self.mtx0 and y >= self.mty0 and x < self.mtx0 + self.metatile and y < self.mty0 + self.metatile
+
+	def tiles(self):
+		for t in self._tiles:
+			yield (t[0], t[1], self.zoom, t[0] - self.mtx0, t[1] - self.mty0)
+
+	def get_bbox(self):
 		# Calculate pixel positions of bottom-left & top-right
-		p0 = (x * TILE_SIZE, (y + 1) * TILE_SIZE)
-		p1 = ((x + 1) * TILE_SIZE, y * TILE_SIZE)
+		p0 = (self.mtx0 * TILE_SIZE, (self.mty0 + self.metatile) * TILE_SIZE)
+		p1 = ((self.mtx0 + self.metatile) * TILE_SIZE, self.mty0 * TILE_SIZE)
 
 		# Convert to LatLong (EPSG:4326)
-		l0 = self.tileproj.fromPixelToLL(p0, z);
-		l1 = self.tileproj.fromPixelToLL(p1, z);
+		l0 = self.tileproj.fromPixelToLL(p0, self.zoom);
+		l1 = self.tileproj.fromPixelToLL(p1, self.zoom);
 
 		# Convert to map projection (e.g. mercator co-ords EPSG:900913)
 		c0 = self.prj.forward(mapnik.Coord(l0[0],l0[1]))
@@ -245,116 +257,152 @@ class RenderThread:
 			bbox = mapnik.Box2d(c0.x,c0.y, c1.x,c1.y)
 		else:
 			bbox = mapnik.Envelope(c0.x,c0.y, c1.x,c1.y)
-		render_size = int(TILE_SIZE * self.scale)
+		return bbox
+
+class RenderThread:
+	def __init__(self, writer, mapfile, q, printLock, verbose=True, scale=1.0):
+		self.writer = writer
+		self.q = q
+		self.mapfile = mapfile
+		self.printLock = printLock
+		self.verbose = verbose
+		self.scale = scale
+		self.scaled_size = int(TILE_SIZE * scale)
+
+	def render_task(self, task):
+		bbox = task.get_bbox()
+		render_size = task.metatile * self.scaled_size
 		self.m.resize(render_size, render_size)
 		self.m.zoom_to_box(bbox)
-		self.m.buffer_size = int(TILE_SIZE * self.scale / 2)
+		self.m.buffer_size = self.scaled_size / 2
 
 		# Render image with default Agg renderer
 		im = mapnik.Image(render_size, render_size)
 		mapnik.render(self.m, im, self.scale)
-		self.writer.write(x, y, z, im)
 
+		# Now cut parts of the image to tiles
+		for t in task.tiles():
+			self.writer.write(t[0], t[1], t[2], im if task.metatile == 1 else im.view(t[3] * self.scaled_size, t[4] * self.scaled_size, self.scaled_size, self.scaled_size))
+			if self.verbose:
+				self.printLock.acquire()
+				print t[2], t[0], t[1]
+				self.printLock.release()
 
 	def loop(self):
 		if self.writer.need_image():
-			self.m = mapnik.Map(TILE_SIZE, TILE_SIZE)
+			self.m = mapnik.Map(self.scaled_size, self.scaled_size)
 			# Load style XML
 			mapnik.load_map(self.m, self.mapfile, True)
 			# Obtain <Map> projection
-			self.prj = mapnik.Projection(self.m.srs)
-			# Projects between tile pixel co-ordinates and LatLong (EPSG:4326)
-			self.tileproj = GoogleProjection()
+			prj = mapnik.Projection(self.m.srs)
 
 		while True:
 			#Fetch a tile from the queue and render it
-			r = self.q.get()
-			if (r == None):
+			task = self.q.get()
+			if (task == None):
 				self.q.task_done()
 				break
-			else:
-				(x, y, z) = r
 
-			exists= ""
-			if self.writer.exists(x, y, z):
-				exists= "exists"
-			elif self.writer.need_image():
-				self.render_tile(x, y, z)
+			if self.writer.need_image():
+				task.prj = prj
+				self.render_task(task)
 			else:
-				self.writer.write(x, y, z)
-			empty = ''
-			#if os.path.exists(tile_uri):
-			#	bytes=os.stat(tile_uri)[6]
-			#	empty= ''
-			#	if bytes == 103:
-			#		empty = " Empty Tile "
-			#else:
-			#	empty = " Missing "
-			if self.verbose:
-				self.printLock.acquire()
-				print z, x, y, exists, empty
-				self.printLock.release()
+				for t in task.tiles():
+					self.writer.write(t[0], t[1], t[2])
 			self.q.task_done()
 
 class ListGenerator:
-	def __init__(self, f):
+	def __init__(self, f, metatile=1):
 		self.f = f
+		self.metatile = metatile
 
 	def __str__(self):
 		return "ListGenerator({0})".format(self.f.name)
 
 	def generate(self, queue):
 		import re
+		metatiles = []
 		for line in self.f:
 			m = re.search(r"(\d+)\D+(\d+)\D+(\d{1,2})", line)
 			if m:
-				queue.put((int(m.group(1)), int(m.group(2)), int(m.group(3))))
+				x = int(m.group(1))
+				y = int(m.group(2))
+				z = int(m.group(3))
+				if self.metatile == 1:
+					queue.put(RenderTask(1, z, x, y))
+				else:
+					n = -1
+					for i in range(len(metatiles)):
+						if metatiles[i].belongs(x, y, z=z):
+							n = i
+							break
+					if n >= 0:
+						m = metatiles.pop(n)
+					else:
+						m = RenderTask(self.metatile, z, x, y)
+						while len(metatiles) >= LIST_QUEUE_LENGTH:
+							queue.put(metatiles.pop(0))
+					m.add(x, y)
+					metatiles.append(m)
+		for m in metatiles:
+			queue.put(m)
 
 
 class PolyGenerator:
-	def __init__(self, poly, zooms):
+	def __init__(self, poly, zooms, metatile=1):
 		self.poly = poly
 		self.zooms = zooms
 		self.zooms.sort()
+		self.metatile = metatile
 
 	def __str__(self):
 		return "PolyGenerator({0}, {1})".format(self.poly.bounds, self.zooms)
 
+	def check_tile(self, x, y, z):
+		# Calculate pixel positions of bottom-left & top-right
+		tt_p0 = (x * TILE_SIZE, (y + 1) * TILE_SIZE)
+		tt_p1 = ((x + 1) * TILE_SIZE, y * TILE_SIZE)
+
+		# Convert to LatLong (EPSG:4326)
+		tt_l0 = self.gprj.fromPixelToLL(tt_p0, z);
+		tt_l1 = self.gprj.fromPixelToLL(tt_p1, z);
+
+		tt_p = box(tt_l0[0], tt_l1[1], tt_l1[0], tt_l0[1])
+		return self.poly.intersects(tt_p)
+
 	def generate(self, queue):
-		gprj = GoogleProjection(self.zooms[-1]+1)
+		self.gprj = GoogleProjection(self.zooms[-1]+1)
 
 		bbox = self.poly.bounds
 		ll0 = (bbox[0], bbox[3])
 		ll1 = (bbox[2], bbox[1])
 
 		for z in self.zooms:
-			px0 = gprj.fromLLtoPixel(ll0, z)
-			px1 = gprj.fromLLtoPixel(ll1, z)
+			px0 = self.gprj.fromLLtoPixel(ll0, z)
+			px1 = self.gprj.fromLLtoPixel(ll1, z)
 
-			for x in range(int(px0[0]/float(TILE_SIZE)), int(px1[0]/float(TILE_SIZE))+1):
-				# Validate x co-ordinate
-				if (x < 0) or (x >= 2**z):
-					continue
-				for y in range(int(px0[1]/float(TILE_SIZE)), int(px1[1]/float(TILE_SIZE))+1):
-					# Validate x co-ordinate
-					if (y < 0) or (y >= 2**z):
-						continue
+			xmin = max(0, min(2**z - 1, int(px0[0]/float(TILE_SIZE))))
+			xmax = max(0, min(2**z - 1, int(px1[0]/float(TILE_SIZE))))
+			ymin = max(0, min(2**z - 1, int(px0[1]/float(TILE_SIZE))))
+			ymax = max(0, min(2**z - 1, int(px1[1]/float(TILE_SIZE))))
 
-					# Calculate pixel positions of bottom-left & top-right
-					tt_p0 = (x * TILE_SIZE, (y + 1) * TILE_SIZE)
-					tt_p1 = ((x + 1) * TILE_SIZE, y * TILE_SIZE)
+			x0_min = xmin - xmin % self.metatile
+			y0_min = ymin - ymin % self.metatile
+			x0_max = xmax - xmax % self.metatile
+			y0_max = ymax - ymax % self.metatile
 
-					# Convert to LatLong (EPSG:4326)
-					tt_l0 = gprj.fromPixelToLL(tt_p0, z);
-					tt_l1 = gprj.fromPixelToLL(tt_p1, z);
-
-					tt_p = box(tt_l0[0], tt_l1[1], tt_l1[0], tt_l0[1])
-					if not self.poly.intersects(tt_p):
-						continue
-
-					# Submit tile to be rendered into the queue
-					t = (x, y, z)
-					queue.put(t)
+			for x0 in range(x0_min, x0_max + 1, self.metatile):
+				for y0 in range(y0_min, y0_max + 1, self.metatile):
+					t = None
+					for x in range(x0, x0 + self.metatile):
+						for y in range(y0, y0 + self.metatile):
+							if x >= xmin and x <= xmax and y >= ymin and y <= ymax:
+								if self.check_tile(x, y, z):
+									if not t:
+										t = RenderTask(self.metatile, z, x0, y0)
+									t.add(x, y)
+					if t:
+						queue.put(t)
 
 
 def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True, scale=1.0):
@@ -471,6 +519,7 @@ if __name__ == "__main__":
 	apg_output.add_argument('-z', '--zooms', type=int, nargs=2, metavar=('ZMIN', 'ZMAX'), help='range of zoom levels to render (default: 6 12)', default=(6, 12))
 	apg_other = parser.add_argument_group('Settings')
 	apg_other.add_argument('-s', '--style', help='style file for mapnik (default: {0})'.format(mapfile), default=mapfile)
+	apg_other.add_argument('--meta', type=int, default=8, metavar='N', help='metatile size NxN tiles (default: 8)')
 	apg_other.add_argument('--scale', type=float, default=1.0, help='scale factor for HiDpi tiles (affects tile size)')
 	apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
 	apg_other.add_argument('-q', '--quiet', dest='verbose', action='store_false', help='do not print any information',  default=True)
@@ -525,9 +574,9 @@ if __name__ == "__main__":
 			sys.exit(1)
 
 	if options.list:
-		generator = ListGenerator(options.list)
+		generator = ListGenerator(options.list, metatile=options.meta)
 	elif poly:
-		generator = PolyGenerator(poly, range(options.zooms[0], options.zooms[1] + 1))
+		generator = PolyGenerator(poly, range(options.zooms[0], options.zooms[1] + 1), metatile=options.meta)
 	else:
 		print "Please specify a region for rendering."
 		sys.exit()
