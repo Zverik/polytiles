@@ -38,6 +38,16 @@ def minmax (a,b,c):
 	a = min(a,c)
 	return a
 
+def format2ext(format):
+	ext = 'png'
+	if format.startswith('jpeg'):
+		ext = 'jpg';
+	elif format.startswith('tif'):
+		ext = 'tif';
+	elif format.startswith('webp'):
+		ext = 'webp';
+	return ext
+
 class GoogleProjection:
 	def __init__(self,levels=22):
 		self.Bc = []
@@ -94,8 +104,8 @@ class ListWriter:
 		self.f.close()
 
 class FileWriter:
-	def __init__(self, tile_dir):
-		self.format = 'png256' # is set from outside
+	def __init__(self, tile_dir, format='png256'):
+		self.format = format
 		self.tile_dir = tile_dir
 		if not self.tile_dir.endswith('/'):
 			self.tile_dir = self.tile_dir + '/'
@@ -109,14 +119,7 @@ class FileWriter:
 		pass
 
 	def tile_uri(self, x, y, z):
-		ext = 'png'
-		if self.format.startswith('jpeg'):
-			ext = 'jpg';
-		elif self.format.startswith('tif'):
-			ext = 'tif';
-		elif self.format.startswith('webp'):
-			ext = 'webp';
-		return '{0}{1}/{2}/{3}.{4}'.format(self.tile_dir, z, x, y, ext)
+		return '{0}{1}/{2}/{3}.{4}'.format(self.tile_dir, z, x, y, format2ext(self.format))
 
 	def exists(self, x, y, z):
 		return os.path.isfile(self.tile_uri(x, y, z))
@@ -147,8 +150,8 @@ class TMSWriter(FileWriter):
 
 # https://github.com/mapbox/mbutil/blob/master/mbutil/util.py
 class MBTilesWriter:
-	def __init__(self, filename, setname, overlay=False, version=1, description=None):
-		self.format = 'png256' # is set from outside
+	def __init__(self, filename, setname, overlay=False, version=1, description=None, format='png256'):
+		self.format = format
 		self.filename = filename
 		if not self.filename.endswith('.mbtiles'):
 			self.filename = self.filename + '.mbtiles'
@@ -161,7 +164,7 @@ class MBTilesWriter:
 		self.cur.execute("""create table if not exists metadata (name text, value text);""")
 		self.cur.execute("""create unique index if not exists name on metadata (name);""")
 		self.cur.execute("""create unique index if not exists tile_index on tiles (zoom_level, tile_column, tile_row);""")
-		metadata = [ ('name', setname), ('format', 'png'), ('type', 'overlay' if overlay else 'baselayer'), ('version', version) ]
+		metadata = [ ('name', setname), ('format', format2ext(self.format)), ('type', 'overlay' if overlay else 'baselayer'), ('version', version) ]
 		if description:
 			metadata.append(('description', description))
 		for name, value in metadata:
@@ -551,14 +554,13 @@ if __name__ == "__main__":
 
 	# writer
 	if options.tiledir:
-		writer = FileWriter(options.tiledir) if not options.tms else TMSWriter(options.tiledir)
+		writer = FileWriter(options.tiledir, format=options.format) if not options.tms else TMSWriter(options.tiledir, format=options.format)
 	elif HAS_SQLITE and options.mbtiles:
-		writer = MBTilesWriter(options.mbtiles, options.name, overlay=options.overlay)
+		writer = MBTilesWriter(options.mbtiles, options.name, overlay=options.overlay, format=options.format)
 	elif options.export:
 		writer = ListWriter(options.export)
 	else:
-		writer = FileWriter(os.getcwd() + '/tiles') if not options.tms else TMSWriter(os.getcwd() + '/tiles')
-	writer.format = options.format
+		writer = FileWriter(os.getcwd() + '/tiles', format=options.format) if not options.tms else TMSWriter(os.getcwd() + '/tiles', format=options.format)
 
 	# input and process
 	poly = None
