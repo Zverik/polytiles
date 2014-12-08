@@ -95,6 +95,7 @@ class ListWriter:
 
 class FileWriter:
 	def __init__(self, tile_dir):
+		self.format = 'png256' # is set from outside
 		self.tile_dir = tile_dir
 		if not self.tile_dir.endswith('/'):
 			self.tile_dir = self.tile_dir + '/'
@@ -108,7 +109,14 @@ class FileWriter:
 		pass
 
 	def tile_uri(self, x, y, z):
-		return '{0}{1}/{2}/{3}.png'.format(self.tile_dir, z, x, y)
+		ext = 'png'
+		if self.format.startswith('jpeg'):
+			ext = 'jpg';
+		elif self.format.startswith('tif'):
+			ext = 'tif';
+		elif self.format.startswith('webp'):
+			ext = 'webp';
+		return '{0}{1}/{2}/{3}.{4}'.format(self.tile_dir, z, x, y, ext)
 
 	def exists(self, x, y, z):
 		return os.path.isfile(self.tile_uri(x, y, z))
@@ -119,7 +127,7 @@ class FileWriter:
 			os.makedirs(os.path.dirname(uri))
 		except OSError:
 			pass
-		image.save(uri, 'png256')
+		image.save(uri, self.format)
 
 	def need_image(self):
 		return True
@@ -140,6 +148,7 @@ class TMSWriter(FileWriter):
 # https://github.com/mapbox/mbutil/blob/master/mbutil/util.py
 class MBTilesWriter:
 	def __init__(self, filename, setname, overlay=False, version=1, description=None):
+		self.format = 'png256' # is set from outside
 		self.filename = filename
 		if not self.filename.endswith('.mbtiles'):
 			self.filename = self.filename + '.mbtiles'
@@ -172,11 +181,13 @@ class MBTilesWriter:
 		self.cur.execute("""insert or replace into metadata (name, value) values ('bounds', ?)""", ','.join(bbox))
 
 	def exists(self, x, y, z):
-		self.cur.execute("""select 1 from tiles where zoom_level = ? and tile_column = ? and tile_row = ?""", (z, x, 2**z-1-y))
+		query = "select 1 from tiles where zoom_level = ? and tile_column = ? and tile_row = ?"
+		self.cur.execute(query, (z, x, 2**z-1-y))
 		return self.cur.fetchone()
 
 	def write(self, x, y, z, image):
-		self.cur.execute("""insert or replace into tiles (zoom_level, tile_column, tile_row, tile_data) values (?, ?, ?, ?);""", (z, x, 2**z-1-y, sqlite3.Binary(image.tostring('png256'))))
+		query = "insert or replace into tiles (zoom_level, tile_column, tile_row, tile_data) values (?, ?, ?, ?);";
+		self.cur.execute(query, (z, x, 2**z-1-y, sqlite3.Binary(image.tostring(self.format))))
 
 	def need_image(self):
 		return True
@@ -519,6 +530,7 @@ if __name__ == "__main__":
 	apg_output.add_argument('-z', '--zooms', type=int, nargs=2, metavar=('ZMIN', 'ZMAX'), help='range of zoom levels to render (default: 6 12)', default=(6, 12))
 	apg_other = parser.add_argument_group('Settings')
 	apg_other.add_argument('-s', '--style', help='style file for mapnik (default: {0})'.format(mapfile), default=mapfile)
+	apg_other.add_argument('-f', '--format', default='png256', help='tile image format (default: png256)')
 	apg_other.add_argument('--meta', type=int, default=8, metavar='N', help='metatile size NxN tiles (default: 8)')
 	apg_other.add_argument('--scale', type=float, default=1.0, help='scale factor for HiDpi tiles (affects tile size)')
 	apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
@@ -526,7 +538,7 @@ if __name__ == "__main__":
 	if HAS_PSYCOPG:
 		apg_db = parser.add_argument_group('Database (for poly/cities)')
 		apg_db.add_argument('-d', '--dbname', metavar='DB', help='database (default: gis)', default='gis')
-		apg_db.add_argument('--host', help='database host', default='localhost')
+		apg_db.add_argument('--host', help='database host', default=None)
 		apg_db.add_argument('--port', type=int, help='database port', default='5432')
 		apg_db.add_argument('-u', '--user', help='user name for db (default: {0})'.format(default_user), default=default_user)
 		apg_db.add_argument('-w', '--password', action='store_true', help='ask for password', default=False)
@@ -546,6 +558,7 @@ if __name__ == "__main__":
 		writer = ListWriter(options.export)
 	else:
 		writer = FileWriter(os.getcwd() + '/tiles') if not options.tms else TMSWriter(os.getcwd() + '/tiles')
+	writer.format = options.format
 
 	# input and process
 	poly = None
@@ -556,7 +569,7 @@ if __name__ == "__main__":
 		tpoly = poly_parse(options.poly)
 		poly = tpoly if not poly else poly.intersection(tpoly)
 	if HAS_PSYCOPG and (options.area != None or options.cities != None):
-		passwd = ""
+		passwd = None
 		if options.password:
 			passwd = getpass.getpass("Please enter your password: ")
 
@@ -570,7 +583,7 @@ if __name__ == "__main__":
 				poly = tpoly if not poly else poly.intersection(tpoly)
 			db.close()
 		except Exception, e:
-			print "Error connecting to database: ", e.pgerror
+			print "Error connecting to database: ", e.pgerror or e
 			sys.exit(1)
 
 	if options.list:
