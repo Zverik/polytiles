@@ -419,36 +419,40 @@ class PolyGenerator:
 						queue.put(t)
 
 
-def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True, scale=1.0):
+def render_tiles_multithreaded(generator, mapfile, writer, num_threads=2, verbose=True, scale=1.0):
 	if verbose:
-		print "render_tiles(",generator, mapfile, writer, ")"
-
-	# Launch rendering threads
-	queue = multiprocessing.JoinableQueue(32 if writer.multithreading() else 0)
+		print "render_tiles_multithreaded(",generator, mapfile, writer, num_threads, ")"
 	printLock = multiprocessing.Lock()
+	queue = multiprocessing.JoinableQueue(32)
 	renderers = {}
-	if writer.multithreading():
-		for i in range(num_threads):
-			renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale)
-			render_thread = multiprocessing.Process(target=renderer.loop)
-			render_thread.start()
-			#print "Started render thread %s" % render_thread.getName()
-			renderers[i] = render_thread
+	for i in range(num_threads):
+		renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale)
+		render_thread = multiprocessing.Process(target=renderer.loop)
+		render_thread.start()
+		renderers[i] = render_thread
 
 	generator.generate(queue)
 
-	if writer.multithreading():
-		# Signal render threads to exit by sending empty request to queue
-		for i in range(num_threads):
-			queue.put(None)
-		# wait for pending rendering jobs to complete
-		queue.join()
-		for i in range(num_threads):
-			renderers[i].join()
-	else:
-		renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale)
+	# Signal render threads to exit by sending empty request to queue
+	for i in range(num_threads):
 		queue.put(None)
-		renderer.loop()
+	# wait for pending rendering jobs to complete
+	queue.join()
+	for i in range(num_threads):
+		renderers[i].join()
+
+def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True, scale=1.0):
+	if num_threads > 1 and writer.multithreading():
+		render_tiles_multithreaded(generator, mapfile, writer, num_threads, verbose, scale)
+	if verbose:
+		print "render_tiles(",generator, mapfile, writer, ")"
+
+	printLock = multiprocessing.Lock()
+	queue = multiprocessing.JoinableQueue(0)
+	generator.generate(queue)
+	renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale)
+	queue.put(None)
+	renderer.loop()
 
 
 def poly_parse(fp):
