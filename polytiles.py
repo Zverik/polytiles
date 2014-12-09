@@ -189,7 +189,7 @@ class MBTilesWriter:
 		return self.cur.fetchone()
 
 	def write(self, x, y, z, image):
-		query = "insert or replace into tiles (zoom_level, tile_column, tile_row, tile_data) values (?, ?, ?, ?);";
+		query = "insert or replace into tiles (zoom_level, tile_column, tile_row, tile_data) values (?, ?, ?, ?);"
 		self.cur.execute(query, (z, x, 2**z-1-y, sqlite3.Binary(image.tostring(self.format))))
 
 	def need_image(self):
@@ -442,8 +442,6 @@ def render_tiles_multithreaded(generator, mapfile, writer, num_threads=2, verbos
 		renderers[i].join()
 
 def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True, scale=1.0):
-	if num_threads > 1 and writer.multithreading():
-		render_tiles_multithreaded(generator, mapfile, writer, num_threads, verbose, scale)
 	if verbose:
 		print "render_tiles(",generator, mapfile, writer, ")"
 
@@ -600,5 +598,9 @@ if __name__ == "__main__":
 		print "Please specify a region for rendering."
 		sys.exit()
 
-	render_tiles(generator, options.style, writer, num_threads=options.threads, verbose=options.verbose, scale=options.scale)
+	if num_threads > 1 and writer.multithreading():
+		render_tiles_multithreaded(generator, options.style, writer, num_threads=options.threads, verbose=options.verbose, scale=options.scale)
+	else:
+		render_tiles(generator, options.style, writer, verbose=options.verbose, scale=options.scale)
+
 	writer.close()
