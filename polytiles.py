@@ -205,32 +205,76 @@ class MBTilesWriter:
 		self.con.close()
 
 
-# todo: make queue-based writer
-class ThreadedWriter:
-	def __init__(self, writer):
-		self.writer = writer
-		self.queue = multiprocessing.Queue(10)
+class FakeImage:
+	def __init__(self, image, format):
+		self.imgstr = image.tostring(format)
+
+	def tostring(self, format):
+		return self.imgstr
+
+	def save(self, uri, format):
+		with open(uri, 'wb') as f:
+			f.write(self.imgstr)
+
+class ThreadedWriterWrapper(multiprocessing.Process):
+	def __init__(self, wclass, wparams):
+		super(ThreadedWriterWrapper, self).__init__()
+		self.wclass = wclass
+		self.wparams = wparams
+		self.format = wparams['format'] if 'format' in wparams else 'png256'
+		(self.p_pipe, self.pipe) = multiprocessing.Pipe()
+		self.daemon = True
+		self.start()
+		(self.ni, self.desc) = self.p_pipe.recv()
 
 	def __str__(self):
-		return "Threaded{0}".format(self.writer)
+		return "Threaded{0}".format(self.desc)
+
+	def run(self):
+		writerConstr = globals()[self.wclass]
+		if not writerConstr:
+			return
+		writer = writerConstr(**self.wparams)
+		need_image = writer.need_image()
+		self.pipe.send((need_image, str(writer)))
+		while True:
+			req, args = self.pipe.recv()
+			if req == 'close':
+				break
+			if req == 'write_poly':
+				writer.write_poly(args)
+			if req == 'write':
+				if need_image:
+					writer.write(args[0], args[1], args[2], args[3])
+				else:
+					writer.write(args[0], args[1], args[2])
+		writer.close()
 
 	def write_poly(self, poly):
-		pass
+		self.p_pipe.send(('write_poly', poly))
 
 	def exists(self, x, y, z):
-		pass
+		return False
 
 	def write(self, x, y, z, image):
-		pass
+		self.p_pipe.send(('write', (x, y, z, FakeImage(image, self.format))))
 
 	def need_image(self):
-		return writer.need_image()
+		return self.ni
 
 	def multithreading(self):
 		return True
 
 	def close(self):
-		writer.close()
+		self.p_pipe.send(('close', None))
+		self.join()
+
+def multi_MBTilesWriter(threads, filename, setname, overlay=False, version=1, description=None, format='png256'):
+	params = {'filename': filename, 'setname': setname, 'overlay': overlay, 'version': version, 'description': description, 'format': format}
+	if threads == 1:
+		return MBTilesWriter(**params)
+	else:
+		return ThreadedWriterWrapper('MBTilesWriter', params)
 
 class RenderTask:
 	def __init__(self, metatile, zoom, x, y):
@@ -558,7 +602,7 @@ if __name__ == "__main__":
 	if options.tiledir:
 		writer = FileWriter(options.tiledir, format=options.format) if not options.tms else TMSWriter(options.tiledir, format=options.format)
 	elif HAS_SQLITE and options.mbtiles:
-		writer = MBTilesWriter(options.mbtiles, options.name, overlay=options.overlay, format=options.format)
+		writer = multi_MBTilesWriter(options.threads, options.mbtiles, options.name, overlay=options.overlay, format=options.format)
 	elif options.export:
 		writer = ListWriter(options.export)
 	else:
@@ -598,7 +642,7 @@ if __name__ == "__main__":
 		print "Please specify a region for rendering."
 		sys.exit()
 
-	if num_threads > 1 and writer.multithreading():
+	if options.threads > 1 and writer.multithreading():
 		render_tiles_multithreaded(generator, options.style, writer, num_threads=options.threads, verbose=options.verbose, scale=options.scale)
 	else:
 		render_tiles(generator, options.style, writer, verbose=options.verbose, scale=options.scale)
