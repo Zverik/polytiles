@@ -104,8 +104,10 @@ class ListWriter:
 		self.f.close()
 
 class FileWriter:
-	def __init__(self, tile_dir, format='png256'):
+	def __init__(self, tile_dir, format='png256', tms=False, overwrite=True):
 		self.format = format
+		self.overwrite = overwrite
+		self.tms = tms
 		self.tile_dir = tile_dir
 		if not self.tile_dir.endswith('/'):
 			self.tile_dir = self.tile_dir + '/'
@@ -119,7 +121,7 @@ class FileWriter:
 		pass
 
 	def tile_uri(self, x, y, z):
-		return '{0}{1}/{2}/{3}.{4}'.format(self.tile_dir, z, x, y, format2ext(self.format))
+		return '{0}{1}/{2}/{3}.{4}'.format(self.tile_dir, z, x, y if not self.tms else 2**z-1-y, format2ext(self.format))
 
 	def exists(self, x, y, z):
 		return os.path.isfile(self.tile_uri(x, y, z))
@@ -130,7 +132,8 @@ class FileWriter:
 			os.makedirs(os.path.dirname(uri))
 		except OSError:
 			pass
-		image.save(uri, self.format)
+		if self.overwrite or not os.path.exists(uri):
+			image.save(uri, self.format)
 
 	def need_image(self):
 		return True
@@ -140,13 +143,6 @@ class FileWriter:
 
 	def close(self):
 		pass
-
-class TMSWriter(FileWriter):
-	def tile_uri(self, x, y, z):
-		return '{0}{1}/{2}/{3}.png'.format(self.tile_dir, z, x, 2**z-1-y)
-
-	def __str__(self):
-		return "TMSWriter({0})".format(self.tile_dir)
 
 # https://github.com/mapbox/mbutil/blob/master/mbutil/util.py
 class MBTilesWriter:
@@ -583,6 +579,7 @@ if __name__ == "__main__":
 	apg_other.add_argument('--meta', type=int, default=8, metavar='N', help='metatile size NxN tiles (default: 8)')
 	apg_other.add_argument('--scale', type=float, default=1.0, help='scale factor for HiDpi tiles (affects tile size)')
 	apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
+	apg_other.add_argument('--skip-existing', action='store_true', default=False, help='do not overwrite existing files')
 	apg_other.add_argument('-q', '--quiet', dest='verbose', action='store_false', help='do not print any information',  default=True)
 	if HAS_PSYCOPG:
 		apg_db = parser.add_argument_group('Database (for poly/cities)')
@@ -600,13 +597,13 @@ if __name__ == "__main__":
 
 	# writer
 	if options.tiledir:
-		writer = FileWriter(options.tiledir, format=options.format) if not options.tms else TMSWriter(options.tiledir, format=options.format)
+		writer = FileWriter(options.tiledir, format=options.format, tms=options.tms, overwrite=not options.skip_existing)
 	elif HAS_SQLITE and options.mbtiles:
 		writer = multi_MBTilesWriter(options.threads, options.mbtiles, options.name, overlay=options.overlay, format=options.format)
 	elif options.export:
 		writer = ListWriter(options.export)
 	else:
-		writer = FileWriter(os.getcwd() + '/tiles', format=options.format) if not options.tms else TMSWriter(os.getcwd() + '/tiles', format=options.format)
+		writer = FileWriter(os.getcwd() + '/tiles', format=options.format, tms=options.tms, overwrite=not options.skip_existing)
 
 	# input and process
 	poly = None
