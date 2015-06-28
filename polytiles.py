@@ -314,12 +314,13 @@ class RenderTask:
 		return bbox
 
 class RenderThread:
-	def __init__(self, writer, mapfile, q, printLock, verbose=True, scale=1.0):
+	def __init__(self, writer, mapfile, q, printLock, verbose=True, scale=1.0, renderlist=False):
 		self.writer = writer
 		self.q = q
 		self.mapfile = mapfile
 		self.printLock = printLock
 		self.verbose = verbose
+		self.renderlist = renderlist
 		self.scale = scale
 		self.scaled_size = int(TILE_SIZE * scale)
 
@@ -363,6 +364,8 @@ class RenderThread:
 			else:
 				for t in task.tiles():
 					self.writer.write(t[0], t[1], t[2])
+					if self.renderlist:
+						break
 			self.q.task_done()
 
 class ListGenerator:
@@ -459,14 +462,14 @@ class PolyGenerator:
 						queue.put(t)
 
 
-def render_tiles_multithreaded(generator, mapfile, writer, num_threads=2, verbose=True, scale=1.0):
+def render_tiles_multithreaded(generator, mapfile, writer, num_threads=2, verbose=True, scale=1.0, renderlist=False):
 	if verbose:
 		print "render_tiles_multithreaded(",generator, mapfile, writer, num_threads, ")"
 	printLock = multiprocessing.Lock()
 	queue = multiprocessing.JoinableQueue(32)
 	renderers = {}
 	for i in range(num_threads):
-		renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale)
+		renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale, renderlist=renderlist)
 		render_thread = multiprocessing.Process(target=renderer.loop)
 		render_thread.start()
 		renderers[i] = render_thread
@@ -481,14 +484,14 @@ def render_tiles_multithreaded(generator, mapfile, writer, num_threads=2, verbos
 	for i in range(num_threads):
 		renderers[i].join()
 
-def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True, scale=1.0):
+def render_tiles(generator, mapfile, writer, num_threads=1, verbose=True, scale=1.0, renderlist=False):
 	if verbose:
 		print "render_tiles(",generator, mapfile, writer, ")"
 
 	printLock = multiprocessing.Lock()
 	queue = multiprocessing.JoinableQueue(0)
 	generator.generate(queue)
-	renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale)
+	renderer = RenderThread(writer, mapfile, queue, printLock, verbose=verbose, scale=scale, renderlist=renderlist)
 	queue.put(None)
 	renderer.loop()
 
@@ -580,6 +583,7 @@ if __name__ == "__main__":
 	apg_other.add_argument('--scale', type=float, default=1.0, help='scale factor for HiDpi tiles (affects tile size)')
 	apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
 	apg_other.add_argument('--skip-existing', action='store_true', default=False, help='do not overwrite existing files')
+	apg_other.add_argument('--for-renderd', action='store_true', default=False, help='produce only a single tile for metatiles')
 	apg_other.add_argument('-q', '--quiet', dest='verbose', action='store_false', help='do not print any information',  default=True)
 	if HAS_PSYCOPG:
 		apg_db = parser.add_argument_group('Database (for poly/cities)')
@@ -640,8 +644,8 @@ if __name__ == "__main__":
 		sys.exit()
 
 	if options.threads > 1 and writer.multithreading():
-		render_tiles_multithreaded(generator, options.style, writer, num_threads=options.threads, verbose=options.verbose, scale=options.scale)
+		render_tiles_multithreaded(generator, options.style, writer, num_threads=options.threads, verbose=options.verbose, scale=options.scale, renderlist=options.for_renderd)
 	else:
-		render_tiles(generator, options.style, writer, verbose=options.verbose, scale=options.scale)
+		render_tiles(generator, options.style, writer, verbose=options.verbose, scale=options.scale, renderlist=options.for_renderd)
 
 	writer.close()
