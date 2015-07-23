@@ -1,8 +1,9 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 # this file is based on generate_tiles_multiprocess.py
 # run it without arguments to see options list
+
 
 import mapnik
 import sys, os, getpass, argparse
@@ -11,6 +12,7 @@ from math import pi,cos,sin,log,exp,atan
 from subprocess import call
 from shapely.geometry import Polygon
 from shapely.wkb import loads
+
 
 try:
 	import psycopg2
@@ -104,11 +106,12 @@ class ListWriter:
 		self.f.close()
 
 class FileWriter:
-	def __init__(self, tile_dir, format='png256', tms=False, overwrite=True):
+	def __init__(self, tile_dir, format='png256', tms=False, overwrite=True, deleteempty=True):
 		self.format = format
 		self.overwrite = overwrite
 		self.tms = tms
 		self.tile_dir = tile_dir
+		self.deleteempty = deleteempty
 		if not self.tile_dir.endswith('/'):
 			self.tile_dir = self.tile_dir + '/'
 		if not os.path.isdir(self.tile_dir):
@@ -132,8 +135,14 @@ class FileWriter:
 			os.makedirs(os.path.dirname(uri))
 		except OSError:
 			pass
+
 		if self.overwrite or not os.path.exists(uri):
 			image.save(uri, self.format)
+
+		if self.deleteempty:
+			bytes=os.stat(uri)[6]
+			if bytes == 103:
+				os.remove(uri)
 
 	def need_image(self):
 		return True
@@ -575,14 +584,16 @@ if __name__ == "__main__":
 		apg_output.add_argument('--name', help='name for mbtiles', default='Test MBTiles')
 		apg_output.add_argument('--overlay', action='store_true', help='if this layer is an overlay (for mbtiles metadata)', default=False)
 	apg_output.add_argument('-x', '--export', type=argparse.FileType('w'), metavar='TILES.LST', help='save tile list into file')
-	apg_output.add_argument('-z', '--zooms', type=int, nargs=2, metavar=('ZMIN', 'ZMAX'), help='range of zoom levels to render (default: 6 12)', default=(6, 12))
+	apg_output.add_argument('-z', '--zooms', type=int, nargs=2, metavar=('ZMIN', 'ZMAX'), help='range of zoom levels to render (default: 0 11)', default=(0, 11))
 	apg_other = parser.add_argument_group('Settings')
 	apg_other.add_argument('-s', '--style', help='style file for mapnik (default: {0})'.format(mapfile), default=mapfile)
 	apg_other.add_argument('-f', '--format', default='png256', help='tile image format (default: png256)')
 	apg_other.add_argument('--meta', type=int, default=8, metavar='N', help='metatile size NxN tiles (default: 8)')
 	apg_other.add_argument('--scale', type=float, default=1.0, help='scale factor for HiDpi tiles (affects tile size)')
-	apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
+	apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=4)
 	apg_other.add_argument('--skip-existing', action='store_true', default=False, help='do not overwrite existing files')
+	apg_other.add_argument('--delete-empty', action='store_true', default=True, help='delete empty tiles')
+	apg_other.add_argument('--custom-fonts', dest='customfonts', action='store_true', help='include custom fonts from a directory',  default=False)
 	apg_other.add_argument('--for-renderd', action='store_true', default=False, help='produce only a single tile for metatiles')
 	apg_other.add_argument('-q', '--quiet', dest='verbose', action='store_false', help='do not print any information',  default=True)
 	if HAS_PSYCOPG:
@@ -599,9 +610,15 @@ if __name__ == "__main__":
 		parser.print_help()
 		sys.exit()
 
+	# custom fonts
+	if(options.customfonts):
+		from mapnik import register_fonts, FontEngine
+ 		#custom_fonts_dir = '../../../fonts/'
+		register_fonts(options.customfonts);
+
 	# writer
 	if options.tiledir:
-		writer = FileWriter(options.tiledir, format=options.format, tms=options.tms, overwrite=not options.skip_existing)
+		writer = FileWriter(options.tiledir, format=options.format, tms=options.tms, overwrite=not options.skip_existing, deleteempty= options.delete_empty)
 	elif HAS_SQLITE and options.mbtiles:
 		writer = multi_MBTilesWriter(options.threads, options.mbtiles, options.name, overlay=options.overlay, format=options.format)
 	elif options.export:
@@ -649,3 +666,4 @@ if __name__ == "__main__":
 		render_tiles(generator, options.style, writer, verbose=options.verbose, scale=options.scale, renderlist=options.for_renderd)
 
 	writer.close()
+
