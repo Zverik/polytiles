@@ -146,9 +146,10 @@ class FileWriter:
 
 # https://github.com/mapbox/mbutil/blob/master/mbutil/util.py
 class MBTilesWriter:
-	def __init__(self, filename, setname, overlay=False, version=1, description=None, format='png256'):
+	def __init__(self, filename, setname, overlay=False, version=1, description=None, format='png256', tms=False):
 		self.format = format
 		self.filename = filename
+		self.tms = tms
 		if not self.filename.endswith('.mbtiles'):
 			self.filename = self.filename + '.mbtiles'
 		self.con = sqlite3.connect(self.filename)
@@ -181,12 +182,12 @@ class MBTilesWriter:
 
 	def exists(self, x, y, z):
 		query = "select 1 from tiles where zoom_level = ? and tile_column = ? and tile_row = ?"
-		self.cur.execute(query, (z, x, 2**z-1-y))
+		self.cur.execute(query, (z, x, y if not self.tms else 2**z-1-y))
 		return self.cur.fetchone()
 
 	def write(self, x, y, z, image):
 		query = "insert or replace into tiles (zoom_level, tile_column, tile_row, tile_data) values (?, ?, ?, ?);"
-		self.cur.execute(query, (z, x, 2**z-1-y, sqlite3.Binary(image.tostring(self.format))))
+		self.cur.execute(query, (z, x,  y if not self.tms else 2**z-1-y, sqlite3.Binary(image.tostring(self.format))))
 
 	def need_image(self):
 		return True
@@ -265,8 +266,8 @@ class ThreadedWriterWrapper(multiprocessing.Process):
 		self.p_pipe.send(('close', None))
 		self.join()
 
-def multi_MBTilesWriter(threads, filename, setname, overlay=False, version=1, description=None, format='png256'):
-	params = {'filename': filename, 'setname': setname, 'overlay': overlay, 'version': version, 'description': description, 'format': format}
+def multi_MBTilesWriter(threads, filename, setname, overlay=False, version=1, description=None, format='png256', tms=False):
+	params = {'filename': filename, 'setname': setname, 'overlay': overlay, 'version': version, 'description': description, 'format': format, 'tms': tms}
 	if threads == 1:
 		return MBTilesWriter(**params)
 	else:
@@ -603,7 +604,7 @@ if __name__ == "__main__":
 	if options.tiledir:
 		writer = FileWriter(options.tiledir, format=options.format, tms=options.tms, overwrite=not options.skip_existing)
 	elif HAS_SQLITE and options.mbtiles:
-		writer = multi_MBTilesWriter(options.threads, options.mbtiles, options.name, overlay=options.overlay, format=options.format)
+		writer = multi_MBTilesWriter(options.threads, options.mbtiles, options.name, overlay=options.overlay, format=options.format, tms=options.tms)
 	elif options.export:
 		writer = ListWriter(options.export)
 	else:
