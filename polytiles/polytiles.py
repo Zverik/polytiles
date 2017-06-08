@@ -601,6 +601,7 @@ def main():
     apg_other.add_argument('--scale', type=float, default=1.0, help='scale factor for HiDpi tiles (affects tile size)')
     apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
     apg_other.add_argument('--skip-existing', action='store_true', default=False, help='do not overwrite existing files')
+    app.other.add_argument('--fonts', help='directory with custom fonts for the style')
     apg_other.add_argument('--for-renderd', action='store_true', default=False, help='produce only a single tile for metatiles')
     apg_other.add_argument('-q', '--quiet', dest='verbose', action='store_false', help='do not print any information',  default=True)
     if HAS_PSYCOPG:
@@ -622,6 +623,10 @@ def main():
     else:
         log_level = logging.INFO
     logging.basicConfig(level=log_level, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
+
+    # custom fonts
+    if options.fonts:
+        mapnik.register_fonts(options.fonts)
 
     # writer
     if options.tiledir:
