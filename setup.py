@@ -31,6 +31,7 @@ setup(
         'Topic :: Utilities',
         'License :: Public Domain',
         'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 3',
     ],
     entry_points={
         'console_scripts': ['polytiles = polytiles:main']
