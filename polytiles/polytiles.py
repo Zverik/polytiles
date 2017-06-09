@@ -342,7 +342,7 @@ class RenderThread:
         render_size = task.metatile * self.scaled_size
         self.m.resize(render_size, render_size)
         self.m.zoom_to_box(bbox)
-        self.m.buffer_size = self.scaled_size / 2
+        self.m.buffer_size = int(self.scaled_size / 2)
 
         # Render image with default Agg renderer
         im = mapnik.Image(render_size, render_size)
@@ -535,7 +535,7 @@ def poly_parse(fp):
             data = True
             hole = l[0] == '!'
         elif l and data:
-            poly.append(map(lambda x: float(x.strip()), l.split()[:2]))
+            poly.append([float(x.strip()) for x in l.split()[:2]])
     return result
 
 
@@ -601,7 +601,7 @@ def main():
     apg_other.add_argument('--scale', type=float, default=1.0, help='scale factor for HiDpi tiles (affects tile size)')
     apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
     apg_other.add_argument('--skip-existing', action='store_true', default=False, help='do not overwrite existing files')
-    app.other.add_argument('--fonts', help='directory with custom fonts for the style')
+    apg_other.add_argument('--fonts', help='directory with custom fonts for the style')
     apg_other.add_argument('--for-renderd', action='store_true', default=False, help='produce only a single tile for metatiles')
     apg_other.add_argument('-q', '--quiet', dest='verbose', action='store_false', help='do not print any information',  default=True)
     if HAS_PSYCOPG:
@@ -618,10 +618,10 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    if options.quiet:
-        log_level = logging.WARNING
-    else:
+    if options.verbose:
         log_level = logging.INFO
+    else:
+        log_level = logging.WARNING
     logging.basicConfig(level=log_level, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
 
     # custom fonts
@@ -671,7 +671,7 @@ def main():
     if options.list:
         generator = ListGenerator(options.list, metatile=options.meta)
     elif poly:
-        generator = PolyGenerator(poly, range(options.zooms[0], options.zooms[1] + 1),
+        generator = PolyGenerator(poly, list(range(options.zooms[0], options.zooms[1] + 1)),
                                   metatile=options.meta)
     else:
         logging.error("Please specify a region for rendering.")
