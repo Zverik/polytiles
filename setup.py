@@ -10,7 +10,7 @@ here = path.abspath(path.dirname(__file__))
 
 setup(
     name='polytiles',
-    version='1.0.0',
+    version='1.0.1',
     author='Ilya Zverev',
     author_email='ilya@zverev.info',
     packages=['polytiles'],
