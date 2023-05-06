@@ -23,8 +23,8 @@ try:
 except ImportError:
     HAS_SQLITE = False
 
-DEG_TO_RAD = pi/180
-RAD_TO_DEG = 180/pi
+DEG_TO_RAD = pi / 180
+RAD_TO_DEG = 180 / pi
 TILE_SIZE = 256
 LIST_QUEUE_LENGTH = 32
 
@@ -32,21 +32,19 @@ LIST_QUEUE_LENGTH = 32
 def box(x1, y1, x2, y2):
     return Polygon([(x1, y1), (x2, y1), (x2, y2), (x1, y2)])
 
-
 def minmax(a, b, c):
     a = max(a, b)
     a = min(a, c)
     return a
 
-
 def format2ext(format):
-    ext = 'png'
-    if format.startswith('jpeg'):
-        ext = 'jpg'
-    elif format.startswith('tif'):
-        ext = 'tif'
-    elif format.startswith('webp'):
-        ext = 'webp'
+    ext = "png"
+    if format.startswith("jpeg"):
+        ext = "jpg"
+    elif format.startswith("tif"):
+        ext = "tif"
+    elif format.startswith("webp"):
+        ext = "webp"
     return ext
 
 
@@ -58,9 +56,9 @@ class GoogleProjection:
         self.Ac = []
         c = 256
         for d in range(0, levels):
-            e = c/2
-            self.Bc.append(c/360.0)
-            self.Cc.append(c/(2 * pi))
+            e = c / 2
+            self.Bc.append(c / 360.0)
+            self.Cc.append(c / (2 * pi))
             self.zc.append((e, e))
             self.Ac.append(c)
             c *= 2
@@ -69,13 +67,13 @@ class GoogleProjection:
         d = self.zc[zoom]
         e = round(d[0] + ll[0] * self.Bc[zoom])
         f = minmax(sin(DEG_TO_RAD * ll[1]), -0.9999, 0.9999)
-        g = round(d[1] + 0.5*log((1+f)/(1-f))*-self.Cc[zoom])
+        g = round(d[1] + 0.5 * log((1 + f) / (1 - f)) * -self.Cc[zoom])
         return (e, g)
 
     def fromPixelToLL(self, px, zoom):
         e = self.zc[zoom]
-        f = (px[0] - e[0])/self.Bc[zoom]
-        g = (px[1] - e[1])/-self.Cc[zoom]
+        f = (px[0] - e[0]) / self.Bc[zoom]
+        g = (px[1] - e[1]) / -self.Cc[zoom]
         h = RAD_TO_DEG * (2 * atan(exp(g)) - 0.5 * pi)
         return (f, h)
 
@@ -107,13 +105,13 @@ class ListWriter:
 
 
 class FileWriter:
-    def __init__(self, tile_dir, format='png256', tms=False, overwrite=True):
+    def __init__(self, tile_dir, format="png256", tms=False, overwrite=True):
         self.format = format
         self.overwrite = overwrite
         self.tms = tms
         self.tile_dir = tile_dir
-        if not self.tile_dir.endswith('/'):
-            self.tile_dir = self.tile_dir + '/'
+        if not self.tile_dir.endswith("/"):
+            self.tile_dir = self.tile_dir + "/"
         if not os.path.isdir(self.tile_dir):
             os.mkdir(self.tile_dir)
 
@@ -124,9 +122,7 @@ class FileWriter:
         pass
 
     def tile_uri(self, x, y, z):
-        return '{0}{1}/{2}/{3}.{4}'.format(self.tile_dir,
-                                           z, x, y if not self.tms else 2**z-1-y,
-                                           format2ext(self.format))
+        return "{0}{1}/{2}/{3}.{4}".format(self.tile_dir, z, x, y if not self.tms else 2**z - 1 - y, format2ext(self.format))
 
     def exists(self, x, y, z):
         return os.path.isfile(self.tile_uri(x, y, z))
@@ -152,49 +148,48 @@ class FileWriter:
 
 # https://github.com/mapbox/mbutil/blob/master/mbutil/util.py
 class MBTilesWriter:
-    def __init__(self, filename, setname, overlay=False,
-                 version=1, description=None, format='png256'):
+    def __init__(self, filename, setname, overlay=False, version=1, description=None, format="png256"):
         self.format = format
         self.filename = filename
-        if not self.filename.endswith('.mbtiles'):
-            self.filename = self.filename + '.mbtiles'
-        self.con = sqlite3.connect(self.filename)
+        if not self.filename.endswith(".mbtiles"):
+            self.filename = self.filename + ".mbtiles"
+        self.con = sqlite3.connect(self.filename, isolation_level=None)
         self.cur = self.con.cursor()
-        self.cur.execute("""PRAGMA synchronous=0""")
-        self.cur.execute("""PRAGMA locking_mode=EXCLUSIVE""")
-        # self.cur.execute("""PRAGMA journal_mode=TRUNCATE""")
-        self.cur.execute("""create table if not exists tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob);""")
-        self.cur.execute("""create table if not exists metadata (name text, value text);""")
-        self.cur.execute("""create unique index if not exists name on metadata (name);""")
-        self.cur.execute("""create unique index if not exists tile_index on tiles (zoom_level, tile_column, tile_row);""")
-        metadata = [('name', setname), ('format', format2ext(self.format)),
-                    ('type', 'overlay' if overlay else 'baselayer'), ('version', version)]
+        self.cur.execute("PRAGMA synchronous=0")
+        self.cur.execute("PRAGMA locking_mode=EXCLUSIVE")
+      # self.cur.execute('PRAGMA journal_mode=TRUNCATE')
+        self.cur.execute("CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob);")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS metadata (name text, value text);")
+        self.cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS name ON metadata (name);")
+        self.cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS tile_index ON tiles (zoom_level, tile_column, tile_row);")
+
+        metadata = [("name", setname), ("format", format2ext(self.format)), ("type", "overlay" if overlay else "baselayer"), ("version", version)]
         if description:
-            metadata.append(('description', description))
-        for name, value in metadata:
-            self.cur.execute('insert or replace into metadata (name, value) values (?, ?)', (name, value))
+            metadata.append(("description", description))
+        self.cur.executemany("REPLACE INTO metadata (name, value) VALUES (?, ?)", metadata)
 
     def __str__(self):
         return "MBTilesWriter({0})".format(self.filename)
 
     def write_poly(self, poly):
         bbox = poly.bounds
-        self.cur.execute("""select value from metadata where name='bounds'""")
+        self.cur.execute("SELECT value FROM metadata WHERE name='bounds'")
         result = self.cur.fetchone
         if result:
-            b = result['value'].split(',')
+            b = result["value"].split(",")
             oldbbox = box(int(b[0]), int(b[1]), int(b[2]), int(b[3]))
             bbox = bbox.union(oldbbox).bounds
-        self.cur.execute("""insert or replace into metadata (name, value) values ('bounds', ?)""", ','.join(bbox))
+        self.cur.execute("REPLACE INTO metadata (name, value) VALUES ('bounds', ?)", ",".join(bbox))
 
     def exists(self, x, y, z):
-        query = "select 1 from tiles where zoom_level = ? and tile_column = ? and tile_row = ?"
-        self.cur.execute(query, (z, x, 2**z-1-y))
+        query = "SELECT 1 FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?"
+        self.cur.execute(query, (z, x, 2**z - 1 - y))
         return self.cur.fetchone()
 
     def write(self, x, y, z, image):
-        query = "insert or replace into tiles (zoom_level, tile_column, tile_row, tile_data) values (?, ?, ?, ?);"
-        self.cur.execute(query, (z, x, 2**z-1-y, sqlite3.Binary(image.tostring(self.format))))
+        query = "REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) values (?, ?, ?, ?);"
+        self.cur.execute(query, (z, x, 2**z - 1 - y, sqlite3.Binary(image.tostring(self.format))))
+        self.con.commit()
 
     def need_image(self):
         return True
@@ -203,8 +198,9 @@ class MBTilesWriter:
         return False
 
     def close(self):
-        self.cur.execute("""ANALYZE;""")
-        self.cur.execute("""VACUUM;""")
+        self.con.commit()
+        self.cur.execute("ANALYZE;")
+        self.cur.execute("VACUUM;")
         self.cur.close()
         self.con.close()
 
@@ -217,7 +213,7 @@ class FakeImage:
         return self.imgstr
 
     def save(self, uri, format):
-        with open(uri, 'wb') as f:
+        with open(uri, "wb") as f:
             f.write(self.imgstr)
 
 
@@ -226,29 +222,29 @@ class ThreadedWriterWrapper(multiprocessing.Process):
         super(ThreadedWriterWrapper, self).__init__()
         self.wclass = wclass
         self.wparams = wparams
-        self.format = wparams['format'] if 'format' in wparams else 'png256'
-        (self.p_pipe, self.pipe) = multiprocessing.Pipe()
+        self.format = wparams.get("format", "png256")
+        self.queue = multiprocessing.Queue(maxsize=100)
         self.daemon = True
         self.start()
-        (self.ni, self.desc) = self.p_pipe.recv()
+        self.ni, self.desc = self.queue.get(block=True, timeout=15)
 
     def __str__(self):
-        return "Threaded{0}".format(self.desc)
+        return "Threaded{}".format(self.desc)
 
     def run(self):
-        writerConstr = globals()[self.wclass]
+        writerConstr = globals().get(self.wclass)
         if not writerConstr:
             return
         writer = writerConstr(**self.wparams)
         need_image = writer.need_image()
-        self.pipe.send((need_image, str(writer)))
+        self.queue.put((need_image, str(writer)))
         while True:
-            req, args = self.pipe.recv()
-            if req == 'close':
+            req, args = self.queue.get()
+            if req == "close":
                 break
-            if req == 'write_poly':
+            elif req == "write_poly":
                 writer.write_poly(args)
-            if req == 'write':
+            elif req == "write":
                 if need_image:
                     writer.write(args[0], args[1], args[2], args[3])
                 else:
@@ -256,13 +252,13 @@ class ThreadedWriterWrapper(multiprocessing.Process):
         writer.close()
 
     def write_poly(self, poly):
-        self.p_pipe.send(('write_poly', poly))
+        self.queue.put(("write_poly", poly))
 
     def exists(self, x, y, z):
         return False
 
     def write(self, x, y, z, image):
-        self.p_pipe.send(('write', (x, y, z, FakeImage(image, self.format))))
+        self.queue.put(("write", (x, y, z, FakeImage(image, self.format))))
 
     def need_image(self):
         return self.ni
@@ -271,18 +267,16 @@ class ThreadedWriterWrapper(multiprocessing.Process):
         return True
 
     def close(self):
-        self.p_pipe.send(('close', None))
-        self.join()
+        self.queue.put(("close", None))
+        super().join()
 
 
-def multi_MBTilesWriter(threads, filename, setname, overlay=False,
-                        version=1, description=None, format='png256'):
-    params = {'filename': filename, 'setname': setname, 'overlay': overlay,
-              'version': version, 'description': description, 'format': format}
+def multi_MBTilesWriter(threads, filename, setname, overlay=False, version=1, description=None, format="png256"):
+    params = {"filename": filename, "setname": setname, "overlay": overlay, "version": version, "description": description, "format": format}
     if threads == 1:
         return MBTilesWriter(**params)
     else:
-        return ThreadedWriterWrapper('MBTilesWriter', params)
+        return ThreadedWriterWrapper("MBTilesWriter", params)
 
 
 class RenderTask:
@@ -292,7 +286,7 @@ class RenderTask:
         self.mtx0 = x - x % metatile
         self.mty0 = y - y % metatile
         self._tiles = set()
-        # Projects between tile pixel co-ordinates and LatLong (EPSG:4326)
+        # projects between tile pixel coordinates and LatLong (EPSG:4326)
         self.tileproj = GoogleProjection()
 
     def add(self, x, y):
@@ -307,20 +301,20 @@ class RenderTask:
             yield (t[0], t[1], self.zoom, t[0] - self.mtx0, t[1] - self.mty0)
 
     def get_bbox(self):
-        # Calculate pixel positions of bottom-left & top-right
+        # calculate pixel positions of bottom-left & top-right
         p0 = (self.mtx0 * TILE_SIZE, (self.mty0 + self.metatile) * TILE_SIZE)
         p1 = ((self.mtx0 + self.metatile) * TILE_SIZE, self.mty0 * TILE_SIZE)
 
-        # Convert to LatLong (EPSG:4326)
+        # convert to LatLong (EPSG:4326)
         l0 = self.tileproj.fromPixelToLL(p0, self.zoom)
         l1 = self.tileproj.fromPixelToLL(p1, self.zoom)
 
-        # Convert to map projection (e.g. mercator co-ords EPSG:900913)
+        # convert to map projection (e.g. mercator coordinates EPSG:900913)
         c0 = self.prj.forward(mapnik.Coord(l0[0], l0[1]))
         c1 = self.prj.forward(mapnik.Coord(l1[0], l1[1]))
 
-        # Bounding box for the tile
-        if hasattr(mapnik, 'mapnik_version') and mapnik.mapnik_version() >= 800:
+        # bounding box for the tile
+        if hasattr(mapnik, "mapnik_version") and mapnik.mapnik_version() >= 800:
             bbox = mapnik.Box2d(c0.x, c0.y, c1.x, c1.y)
         else:
             bbox = mapnik.Envelope(c0.x, c0.y, c1.x, c1.y)
@@ -328,14 +322,15 @@ class RenderTask:
 
 
 class RenderThread:
-    def __init__(self, writer, mapfile, q, printLock, scale=1.0, renderlist=False):
+    def __init__(self, writer, maprenderer, q, printLock, scale=1.0, renderlist=False):
         self.writer = writer
         self.q = q
-        self.mapfile = mapfile
         self.printLock = printLock
         self.renderlist = renderlist
-        self.scale = scale
-        self.scaled_size = int(TILE_SIZE * scale)
+        self.m = maprenderer.get_map()
+        self.p = maprenderer.get_projection()
+        self.scale = maprenderer.get_scale()
+        self.scaled_size = maprenderer.get_scaled_size()
 
     def render_task(self, task):
         bbox = task.get_bbox()
@@ -344,35 +339,31 @@ class RenderThread:
         self.m.zoom_to_box(bbox)
         self.m.buffer_size = int(self.scaled_size / 2)
 
-        # Render image with default Agg renderer
+        # render image with default AGG renderer
         im = mapnik.Image(render_size, render_size)
         mapnik.render(self.m, im, self.scale)
 
-        # Now cut parts of the image to tiles
+        # now cut parts of the image to tiles
         for t in task.tiles():
-            self.writer.write(t[0], t[1], t[2], im if task.metatile == 1 else im.view(t[3] * self.scaled_size, t[4] * self.scaled_size, self.scaled_size, self.scaled_size))
-            if logging.getLogger().isEnabledFor(logging.INFO):
-                self.printLock.acquire()
-                logging.info('%s %s %s', t[2], t[0], t[1])
-                self.printLock.release()
+            if task.metatile == 1:
+                self.writer.write(t[0], t[1], t[2], im)
+            else:
+                self.writer.write(t[0], t[1], t[2], im.view(t[3] * self.scaled_size, t[4] * self.scaled_size, self.scaled_size, self.scaled_size))
+            logger = logging.getLogger(__name__)
+            if logger.isEnabledFor(logging.INFO):
+                with self.printLock:
+                    logger.info(f"{t[2]} {t[0]} {t[1]}")
 
     def loop(self):
-        if self.writer.need_image():
-            self.m = mapnik.Map(self.scaled_size, self.scaled_size)
-            # Load style XML
-            mapnik.load_map(self.m, self.mapfile, True)
-            # Obtain <Map> projection
-            prj = mapnik.Projection(self.m.srs)
-
         while True:
-            # Fetch a tile from the queue and render it
+            # fetch a tile from the queue and render it
             task = self.q.get()
             if task is None:
                 self.q.task_done()
                 break
 
             if self.writer.need_image():
-                task.prj = prj
+                task.prj = self.p
                 self.render_task(task)
             else:
                 for t in task.tiles():
@@ -392,6 +383,7 @@ class ListGenerator:
 
     def generate(self, queue):
         import re
+
         metatiles = []
         for line in self.f:
             m = re.search(r"(\d+)\D+(\d+)\D+(\d{1,2})", line)
@@ -430,11 +422,11 @@ class PolyGenerator:
         return "PolyGenerator({0}, {1})".format(self.poly.bounds, self.zooms)
 
     def check_tile(self, x, y, z):
-        # Calculate pixel positions of bottom-left & top-right
+        # calculate pixel positions of bottom-left & top-right
         tt_p0 = (x * TILE_SIZE, (y + 1) * TILE_SIZE)
         tt_p1 = ((x + 1) * TILE_SIZE, y * TILE_SIZE)
 
-        # Convert to LatLong (EPSG:4326)
+        # convert to LatLong (EPSG:4326)
         tt_l0 = self.gprj.fromPixelToLL(tt_p0, z)
         tt_l1 = self.gprj.fromPixelToLL(tt_p1, z)
 
@@ -442,7 +434,7 @@ class PolyGenerator:
         return self.poly.intersects(tt_p)
 
     def generate(self, queue):
-        self.gprj = GoogleProjection(self.zooms[-1]+1)
+        self.gprj = GoogleProjection(self.zooms[-1] + 1)
 
         bbox = self.poly.bounds
         ll0 = (bbox[0], bbox[3])
@@ -452,10 +444,10 @@ class PolyGenerator:
             px0 = self.gprj.fromLLtoPixel(ll0, z)
             px1 = self.gprj.fromLLtoPixel(ll1, z)
 
-            xmin = max(0, min(2**z - 1, int(px0[0]/float(TILE_SIZE))))
-            xmax = max(0, min(2**z - 1, int(px1[0]/float(TILE_SIZE))))
-            ymin = max(0, min(2**z - 1, int(px0[1]/float(TILE_SIZE))))
-            ymax = max(0, min(2**z - 1, int(px1[1]/float(TILE_SIZE))))
+            xmin = max(0, min(2**z - 1, int(px0[0] / float(TILE_SIZE))))
+            xmax = max(0, min(2**z - 1, int(px1[0] / float(TILE_SIZE))))
+            ymin = max(0, min(2**z - 1, int(px0[1] / float(TILE_SIZE))))
+            ymax = max(0, min(2**z - 1, int(px1[1] / float(TILE_SIZE))))
 
             x0_min = xmin - xmin % self.metatile
             y0_min = ymin - ymin % self.metatile
@@ -476,38 +468,63 @@ class PolyGenerator:
                         queue.put(t)
 
 
-def render_tiles_multithreaded(generator, mapfile, writer, num_threads=2,
-                               scale=1.0, renderlist=False):
-    logging.info("render_tiles_multithreaded(%s %s %s %s)", generator, mapfile, writer, num_threads)
+class MapnikRenderer:
+    def __init__(self, mapfile, scale):
+        self.mapfile = mapfile
+        self.scale = scale
+        self.scaled_size = int(TILE_SIZE * scale)
+        self.m = mapnik.Map(self.scaled_size, self.scaled_size)
+        mapnik.load_map(self.m, self.mapfile, True)
+        self.prj = mapnik.Projection(self.m.srs)
+
+    def get_map(self):
+        return self.m
+
+    def get_mapfile(self):
+        return self.mapfile
+
+    def get_projection(self):
+        return self.prj
+
+    def get_scale(self):
+        return self.scale
+
+    def get_scaled_size(self):
+        return self.scaled_size
+
+
+def render_tiles_multithreaded(generator, maprenderer, writer, num_threads=2, scale=1.0, renderlist=False):
+    logging.info("render_tiles_multithreaded(%s %s %s %s)", generator, maprenderer.get_mapfile(), writer, num_threads)
     printLock = multiprocessing.Lock()
     queue = multiprocessing.JoinableQueue(32)
+
     renderers = {}
     for i in range(num_threads):
-        renderer = RenderThread(writer, mapfile, queue, printLock,
-                                scale=scale, renderlist=renderlist)
+        renderer = RenderThread(writer, maprenderer, queue, printLock, scale=scale, renderlist=renderlist)
         render_thread = multiprocessing.Process(target=renderer.loop)
         render_thread.start()
         renderers[i] = render_thread
 
     generator.generate(queue)
 
-    # Signal render threads to exit by sending empty request to queue
+    # signal render threads to exit by sending empty request to queue
     for i in range(num_threads):
         queue.put(None)
+
     # wait for pending rendering jobs to complete
     queue.join()
     for i in range(num_threads):
         renderers[i].join()
 
 
-def render_tiles(generator, mapfile, writer, num_threads=1,
-                 scale=1.0, renderlist=False):
-    logging.info("render_tiles(%s %s %s)", generator, mapfile, writer)
+def render_tiles(generator, maprenderer, writer, num_threads=1, scale=1.0, renderlist=False):
+    logging.info("render_tiles(%s %s %s)", generator, maprenderer.get_mapfile(), writer)
     printLock = multiprocessing.Lock()
+
     queue = multiprocessing.JoinableQueue(0)
     generator.generate(queue)
-    renderer = RenderThread(writer, mapfile, queue, printLock,
-                            scale=scale, renderlist=renderlist)
+
+    renderer = RenderThread(writer, maprenderer, queue, printLock, scale=scale, renderlist=renderlist)
     queue.put(None)
     renderer.loop()
 
@@ -519,7 +536,7 @@ def poly_parse(fp):
     hole = False
     for l in fp:
         l = l.strip()
-        if l == 'END' and data:
+        if l == "END" and data:
             if len(poly) > 0:
                 if hole and result:
                     result = result.difference(Polygon(poly))
@@ -529,88 +546,88 @@ def poly_parse(fp):
                     result = Polygon(poly)
             poly = []
             data = False
-        elif l == 'END' and not data:
+        elif l == "END" and not data:
             break
-        elif len(l) > 0 and ' ' not in l and '\t' not in l:
+        elif len(l) > 0 and " " not in l and "\t" not in l:
             data = True
-            hole = l[0] == '!'
+            hole = l[0] == "!"
         elif l and data:
             poly.append([float(x.strip()) for x in l.split()[:2]])
     return result
 
 
 def read_db(db, osm_id=0):
-    # Zero for DB bbox
+    # zero for DB BBOX
     cur = db.cursor()
     if osm_id:
-        cur.execute("""SELECT ST_Transform(way, 4326) FROM planet_osm_polygon WHERE osm_id = %s;""", (osm_id,))
+        cur.execute("SELECT ST_Transform(way, 4326) FROM planet_osm_polygon WHERE osm_id = %s;", (osm_id,))
     else:
-        cur.execute("""SELECT ST_Transform(ST_ConvexHull(ST_Collect(way)), 4326) FROM planet_osm_polygon;""")
+        cur.execute("SELECT ST_Transform(ST_ConvexHull(ST_Collect(way)), 4326) FROM planet_osm_polygon;")
     way = cur.fetchone()[0]
     cur.close()
-    return loads(way.decode('hex'))
+    return loads(way.decode("hex"))
 
 
 def read_cities(db, osm_id=0):
     cur = db.cursor()
     if osm_id:
-        cur.execute("""SELECT ST_Transform(ST_Union(pl.way), 4326) FROM planet_osm_polygon pl, planet_osm_polygon b WHERE b.osm_id = %s AND pl.place IN ('town', 'city') AND ST_Area(pl.way) < 500*1000*1000 AND ST_Contains(b.way, pl.way);""", (osm_id,))
+        cur.execute("SELECT ST_Transform(ST_Union(pl.way), 4326) FROM planet_osm_polygon pl, planet_osm_polygon b WHERE b.osm_id = %s AND pl.place IN ('town', 'city') AND ST_Area(pl.way) < 500*1000*1000 AND ST_Contains(b.way, pl.way);", (osm_id,))
     else:
-        cur.execute("""SELECT ST_Transform(ST_Union(way), 4326) FROM planet_osm_polygon WHERE place IN ('town', 'city') AND ST_Area(way) < 500*1000*1000;""")
+        cur.execute("SELECT ST_Transform(ST_Union(way), 4326) FROM planet_osm_polygon WHERE place IN ('town', 'city') AND ST_Area(way) < 500*1000*1000;")
     result = cur.fetchone()
-    poly = loads(result[0].decode('hex')) if result else Polygon()
+    poly = loads(result[0].decode("hex")) if result else Polygon()
     if osm_id:
-        cur.execute("""SELECT ST_Transform(ST_Union(ST_Buffer(p.way, 5000)), 4326) FROM planet_osm_point p, planet_osm_polygon b WHERE b.osm_id=%s AND ST_Contains(b.way, p.way) AND p.place IN ('town', 'city') AND NOT EXISTS(SELECT 1 FROM planet_osm_polygon pp WHERE pp.name=p.name AND ST_Contains(pp.way, p.way));""", (osm_id,))
+        cur.execute("SELECT ST_Transform(ST_Union(ST_Buffer(p.way, 5000)), 4326) FROM planet_osm_point p, planet_osm_polygon b WHERE b.osm_id=%s AND ST_Contains(b.way, p.way) AND p.place IN ('town', 'city') AND NOT EXISTS(SELECT 1 FROM planet_osm_polygon pp WHERE pp.name=p.name AND ST_Contains(pp.way, p.way));", (osm_id,))
     else:
-        cur.execute("""SELECT ST_Transform(ST_Union(ST_Buffer(p.way, 5000)), 4326) FROM planet_osm_point p WHERE p.place in ('town', 'city') AND NOT EXISTS(SELECT 1 FROM planet_osm_polygon pp WHERE pp.name=p.name AND ST_Contains(pp.way, p.way));""")
+        cur.execute("SELECT ST_Transform(ST_Union(ST_Buffer(p.way, 5000)), 4326) FROM planet_osm_point p WHERE p.place in ('town', 'city') AND NOT EXISTS(SELECT 1 FROM planet_osm_polygon pp WHERE pp.name=p.name AND ST_Contains(pp.way, p.way));")
     result = cur.fetchone()
     if result:
-        poly = poly.union(loads(result[0].decode('hex')))
+        poly = poly.union(loads(result[0].decode("hex")))
     return poly
 
 
 def main():
     try:
-        mapfile = os.environ['MAPNIK_MAP_FILE']
+        mapfile = os.environ["MAPNIK_MAP_FILE"]
     except KeyError:
-        mapfile = os.getcwd() + '/osm.xml'
+        mapfile = os.getcwd() + "/osm.xml"
 
     default_user = getpass.getuser()
 
-    parser = argparse.ArgumentParser(description='Generate mapnik tiles for an OSM polygon')
-    apg_input = parser.add_argument_group('Input')
-    apg_input.add_argument("-b", "--bbox", nargs=4, type=float, metavar=('X1', 'Y1', 'X2', 'Y2'), help="generate tiles inside a bounding box")
-    apg_input.add_argument('-p', '--poly', type=argparse.FileType('r'), help='use a poly file for area')
+    parser = argparse.ArgumentParser(description="Generate mapnik tiles for an OSM polygon")
+    apg_input = parser.add_argument_group("Input")
+    apg_input.add_argument("-b", "--bbox", nargs=4, type=float, metavar=("X1", "Y1", "X2", "Y2"), help="generate tiles inside a bounding box")
+    apg_input.add_argument("-p", "--poly", type=argparse.FileType("r"), help="use a poly file for area")
     if HAS_PSYCOPG:
-        apg_input.add_argument("-a", "--area", type=int, metavar='OSM_ID', help="generate tiles inside an OSM polygon: positive for polygons, negative for relations, 0 for whole database")
-        apg_input.add_argument("-c", "--cities", type=int, metavar='OSM_ID', help='generate tiles for all towns inside a polygon')
-    apg_input.add_argument('-l', '--list', type=argparse.FileType('r'), metavar='TILES.LST', help='process tile list')
-    apg_output = parser.add_argument_group('Output')
-    apg_output.add_argument('-t', '--tiledir', metavar='DIR', help='output tiles to directory (default: {0}/tiles)'.format(os.getcwd()))
-    apg_output.add_argument('--tms', action='store_true', help='write files in TMS order', default=False)
+        apg_input.add_argument("-a", "--area", type=int, metavar="OSM_ID", help="generate tiles inside an OSM polygon: positive for polygons, negative for relations, 0 for whole database")
+        apg_input.add_argument("-c", "--cities", type=int, metavar="OSM_ID", help="generate tiles for all towns inside a polygon")
+    apg_input.add_argument("-l", "--list", type=argparse.FileType("r"), metavar="TILES.LST", help="process tile list")
+    apg_output = parser.add_argument_group("Output")
+    apg_output.add_argument("-t", "--tiledir", metavar="DIR", help="output tiles to directory (default: {0}/tiles)".format(os.getcwd()))
+    apg_output.add_argument("--tms", action="store_true", help="write files in TMS order", default=False)
     if HAS_SQLITE:
-        apg_output.add_argument('-m', '--mbtiles', help='generate mbtiles file')
-        apg_output.add_argument('--name', help='name for mbtiles', default='Test MBTiles')
-        apg_output.add_argument('--overlay', action='store_true', help='if this layer is an overlay (for mbtiles metadata)', default=False)
-    apg_output.add_argument('-x', '--export', type=argparse.FileType('w'), metavar='TILES.LST', help='save tile list into file')
-    apg_output.add_argument('-z', '--zooms', type=int, nargs=2, metavar=('ZMIN', 'ZMAX'), help='range of zoom levels to render (default: 6 12)', default=(6, 12))
-    apg_other = parser.add_argument_group('Settings')
-    apg_other.add_argument('-s', '--style', help='style file for mapnik (default: {0})'.format(mapfile), default=mapfile)
-    apg_other.add_argument('-f', '--format', default='png256', help='tile image format (default: png256)')
-    apg_other.add_argument('--meta', type=int, default=8, metavar='N', help='metatile size NxN tiles (default: 8)')
-    apg_other.add_argument('--scale', type=float, default=1.0, help='scale factor for HiDpi tiles (affects tile size)')
-    apg_other.add_argument('--threads', type=int, metavar='N', help='number of threads (default: 2)', default=2)
-    apg_other.add_argument('--skip-existing', action='store_true', default=False, help='do not overwrite existing files')
-    apg_other.add_argument('--fonts', help='directory with custom fonts for the style')
-    apg_other.add_argument('--for-renderd', action='store_true', default=False, help='produce only a single tile for metatiles')
-    apg_other.add_argument('-q', '--quiet', dest='verbose', action='store_false', help='do not print any information',  default=True)
+        apg_output.add_argument("-m", "--mbtiles", help="generate mbtiles file")
+        apg_output.add_argument("--name", help="name for mbtiles", default="Test MBTiles")
+        apg_output.add_argument("--overlay", action="store_true", help="if this layer is an overlay (for mbtiles metadata)", default=False)
+    apg_output.add_argument("-x", "--export", type=argparse.FileType("w"), metavar="TILES.LST", help="save tile list into file")
+    apg_output.add_argument("-z", "--zooms", type=int, nargs=2, metavar=("ZMIN", "ZMAX"), help="range of zoom levels to render (default: 6 12)", default=(6, 12))
+    apg_other = parser.add_argument_group("Settings")
+    apg_other.add_argument("-s", "--style", help="style file for mapnik (default: {0})".format(mapfile), default=mapfile)
+    apg_other.add_argument("-f", "--format", default="png256", help="tile image format (default: png256)")
+    apg_other.add_argument("--meta", type=int, default=8, metavar="N", help="metatile size NxN tiles (default: 8)")
+    apg_other.add_argument("--scale", type=float, default=1.0, help="scale factor for HiDpi tiles (affects tile size)")
+    apg_other.add_argument("--threads", type=int, metavar="N", help="number of threads (default: 2)", default=2)
+    apg_other.add_argument("--skip-existing", action="store_true", default=False, help="do not overwrite existing files")
+    apg_other.add_argument("--fonts", help="directory with custom fonts for the style")
+    apg_other.add_argument("--for-renderd", action="store_true", default=False, help="produce only a single tile for metatiles")
+    apg_other.add_argument("-q", "--quiet", dest="verbose", action="store_false", help="do not print any information", default=True)
     if HAS_PSYCOPG:
-        apg_db = parser.add_argument_group('Database (for poly/cities)')
-        apg_db.add_argument('-d', '--dbname', metavar='DB', help='database (default: gis)', default='gis')
-        apg_db.add_argument('--host', help='database host', default=None)
-        apg_db.add_argument('--port', type=int, help='database port', default='5432')
-        apg_db.add_argument('-u', '--user', help='user name for db (default: {0})'.format(default_user), default=default_user)
-        apg_db.add_argument('-w', '--password', action='store_true', help='ask for password', default=False)
+        apg_db = parser.add_argument_group("Database (for poly/cities)")
+        apg_db.add_argument("-d", "--dbname", metavar="DB", help="database (default: gis)", default="gis")
+        apg_db.add_argument("--host", help="database host", default=None)
+        apg_db.add_argument("--port", type=int, help="database port", default="5432")
+        apg_db.add_argument("-u", "--user", help="user name for db (default: {0})".format(default_user), default=default_user)
+        apg_db.add_argument("-w", "--password", action="store_true", help="ask for password", default=False)
     options = parser.parse_args()
 
     # check for required argument
@@ -622,7 +639,7 @@ def main():
         log_level = logging.INFO
     else:
         log_level = logging.WARNING
-    logging.basicConfig(level=log_level, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
+    logging.basicConfig(level=log_level, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
     # custom fonts
     if options.fonts:
@@ -630,16 +647,13 @@ def main():
 
     # writer
     if options.tiledir:
-        writer = FileWriter(options.tiledir, format=options.format,
-                            tms=options.tms, overwrite=not options.skip_existing)
+        writer = FileWriter(options.tiledir, format=options.format, tms=options.tms, overwrite=not options.skip_existing)
     elif HAS_SQLITE and options.mbtiles:
-        writer = multi_MBTilesWriter(options.threads, options.mbtiles, options.name,
-                                     overlay=options.overlay, format=options.format)
+        writer = multi_MBTilesWriter(options.threads, options.mbtiles, options.name, overlay=options.overlay, format=options.format)
     elif options.export:
         writer = ListWriter(options.export)
     else:
-        writer = FileWriter(os.getcwd() + '/tiles', format=options.format,
-                            tms=options.tms, overwrite=not options.skip_existing)
+        writer = FileWriter(os.getcwd() + "/tiles", format=options.format, tms=options.tms, overwrite=not options.skip_existing)
 
     # input and process
     poly = None
@@ -653,10 +667,8 @@ def main():
         passwd = None
         if options.password:
             passwd = getpass.getpass("Please enter your password: ")
-
         try:
-            db = psycopg2.connect(database=options.dbname, user=options.user,
-                                  password=passwd, host=options.host, port=options.port)
+            db = psycopg2.connect(database=options.dbname, user=options.user, password=passwd, host=options.host, port=options.port)
             if options.area:
                 tpoly = read_db(db, options.area)
                 poly = tpoly if not poly else poly.intersection(tpoly)
@@ -671,21 +683,19 @@ def main():
     if options.list:
         generator = ListGenerator(options.list, metatile=options.meta)
     elif poly:
-        generator = PolyGenerator(poly, list(range(options.zooms[0], options.zooms[1] + 1)),
-                                  metatile=options.meta)
+        generator = PolyGenerator(poly, list(range(options.zooms[0], options.zooms[1] + 1)), metatile=options.meta)
     else:
         logging.error("Please specify a region for rendering.")
         sys.exit(4)
 
+    renderer = MapnikRenderer(options.style, options.scale)
     if options.threads > 1 and writer.multithreading():
-        render_tiles_multithreaded(generator, options.style, writer,
-                                   num_threads=options.threads,
-                                   scale=options.scale, renderlist=options.for_renderd)
+        render_tiles_multithreaded(generator, renderer, writer, num_threads=options.threads, renderlist=options.for_renderd)
     else:
-        render_tiles(generator, options.style, writer,
-                     scale=options.scale, renderlist=options.for_renderd)
+        render_tiles(generator, renderer, writer, renderlist=options.for_renderd)
 
     writer.close()
+
 
 if __name__ == "__main__":
     main()
